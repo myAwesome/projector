@@ -9,8 +9,8 @@ import (
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"proj/internal/runner"
-	"proj/internal/store"
+	"project/internal/runner"
+	"project/internal/store"
 )
 
 type item struct {

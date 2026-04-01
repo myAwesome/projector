@@ -3,7 +3,7 @@ package cmd
 import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
-	"proj/internal/tui"
+	"project/internal/tui"
 )
 
 var tuiCmd = &cobra.Command{
