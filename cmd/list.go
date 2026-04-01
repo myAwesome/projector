@@ -2,10 +2,11 @@ package cmd
 
 import (
 	"fmt"
-	"text/tabwriter"
 	"os"
+	"text/tabwriter"
 
 	"github.com/spf13/cobra"
+	"proj/internal/runner"
 	"proj/internal/store"
 )
 
@@ -23,9 +24,19 @@ var listCmd = &cobra.Command{
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "NAME\tDIR\tSCRIPT")
+		fmt.Fprintln(w, "NAME\tSTATUS\tPORTS\tSTARTED\tSCRIPT")
 		for _, p := range projects {
-			fmt.Fprintf(w, "%s\t%s\t%s\n", p.Name, p.Dir, p.Script)
+			status := "stopped"
+			ports := "-"
+			started := "-"
+
+			if rs, running := runner.IsRunning(p.Name); running {
+				status = fmt.Sprintf("running (pid %d)", rs.PID)
+				ports = runner.FormatPorts(runner.Ports(rs.PGID, rs.PID))
+				started = rs.StartedAt.Format("15:04:05")
+			}
+
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", p.Name, status, ports, started, p.Script)
 		}
 		return w.Flush()
 	},
