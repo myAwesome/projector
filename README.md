@@ -68,6 +68,19 @@ proj stop <name>
 
 Sends `SIGTERM` to the entire process group, stopping the project and all its children.
 
+### Interactive TUI
+
+```sh
+proj tui
+```
+
+Keyboard controls:
+
+- `up/down` or `j/k`: move selection
+- `enter` or `space`: start/stop selected project
+- `r`: refresh project status
+- `q`: quit
+
 ## Storage
 
 | File | Contents |
@@ -78,4 +91,4 @@ Sends `SIGTERM` to the entire process group, stopping the project and all its ch
 ## Requirements
 
 - macOS (port detection uses `lsof` and `pgrep`)
-- Go 1.21+
+- Go 1.24.2+
