@@ -1,6 +1,6 @@
 # projector
 
-CLI tool to register, run, and stop local web app projects.
+CLI/TUI tool to register, run, monitor, and stop local web app projects.
 
 ## Install
 
@@ -14,6 +14,16 @@ Or build locally:
 go build -o proj .
 # optionally move to PATH
 mv proj /usr/local/bin/proj
+```
+
+## Quick start
+
+```sh
+# 1) register a project
+proj register --name "kanban" --dir ~/projects/kanban --script "./start.sh"
+
+# 2) run in interactive mode
+proj tui
 ```
 
 ## Commands
@@ -74,12 +84,16 @@ Sends `SIGTERM` to the entire process group, stopping the project and all its ch
 proj tui
 ```
 
+Shows all registered projects in one screen and allows starting/stopping the selected project.
+
 Keyboard controls:
 
 - `up/down` or `j/k`: move selection
 - `enter` or `space`: start/stop selected project
 - `r`: refresh project status
 - `q`: quit
+
+For a more detailed TUI guide, see [`docs/TUI.md`](docs/TUI.md).
 
 ## Storage
 
@@ -92,3 +106,8 @@ Keyboard controls:
 
 - macOS (port detection uses `lsof` and `pgrep`)
 - Go 1.24.2+
+
+## Notes
+
+- Existing CLI commands (`list`, `run`, `stop`) are still supported.
+- TUI actions reuse the same runner/store internals as the CLI commands.
