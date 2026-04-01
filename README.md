@@ -90,6 +90,7 @@ Keyboard controls:
 
 - `up/down` or `j/k`: move selection
 - `enter` or `space`: start/stop selected project
+- `o`: open project dir in terminal
 - `r`: refresh project status
 - `q`: quit
 
