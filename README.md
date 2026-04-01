@@ -5,15 +5,15 @@ CLI/TUI tool to register, run, monitor, and stop local web app projects.
 ## Install
 
 ```sh
-go install proj
+go install project
 ```
 
 Or build locally:
 
 ```sh
-go build -o proj .
+go build -o project .
 # optionally move to PATH
-mv proj /usr/local/bin/proj
+mv project /usr/local/bin/project
 ```
 
 ## Quick start
@@ -31,7 +31,7 @@ proj tui
 ### Register a project
 
 ```sh
-proj register --name <name> --dir <path> --script <command>
+project register --name <name> --dir <path> --script <command>
 ```
 
 | Flag | Description |
@@ -43,15 +43,15 @@ proj register --name <name> --dir <path> --script <command>
 Examples:
 
 ```sh
-proj register --name "kanban" --dir ~/projects/kanban --script "./start.sh"
-proj register --name "blog" --dir ~/projects/blog --script "docker compose up"
-proj register --name "api" --dir ~/projects/api --script "go run ./cmd/server"
+project register --name "kanban" --dir ~/projects/kanban --script "./start.sh"
+project register --name "blog" --dir ~/projects/blog --script "docker compose up"
+project register --name "api" --dir ~/projects/api --script "go run ./cmd/server"
 ```
 
 ### List projects
 
 ```sh
-proj list
+project list
 ```
 
 Shows all registered projects with their current status, listened ports, and start time:
@@ -65,7 +65,7 @@ blog    stopped              -           -          docker compose up
 ### Run a project
 
 ```sh
-proj run <name>
+project run <name>
 ```
 
 Starts the project's script in the background. All child processes (server, db, client) run in the same process group, so `stop` can terminate them all at once.
@@ -73,7 +73,7 @@ Starts the project's script in the background. All child processes (server, db, 
 ### Stop a project
 
 ```sh
-proj stop <name>
+project stop <name>
 ```
 
 Sends `SIGTERM` to the entire process group, stopping the project and all its children.
@@ -99,8 +99,8 @@ For a more detailed TUI guide, see [`docs/TUI.md`](docs/TUI.md).
 
 | File | Contents |
 |------|----------|
-| `~/.config/proj/projects.json` | Registered projects |
-| `~/.config/proj/state.json` | Running process state (PID, PGID, start time) |
+| `~/.config/project/projects.json` | Registered projects |
+| `~/.config/project/state.json` | Running process state (PID, PGID, start time) |
 
 ## Requirements
 

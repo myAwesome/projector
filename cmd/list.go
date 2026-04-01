@@ -6,8 +6,8 @@ import (
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
-	"proj/internal/runner"
-	"proj/internal/store"
+	"project/internal/runner"
+	"project/internal/store"
 )
 
 var listCmd = &cobra.Command{

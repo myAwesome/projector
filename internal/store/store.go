@@ -23,7 +23,7 @@ func configDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	dir := filepath.Join(home, ".config", "proj")
+	dir := filepath.Join(home, ".config", "project")
 	return dir, os.MkdirAll(dir, 0755)
 }
 

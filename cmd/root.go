@@ -7,7 +7,7 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:          "proj",
+	Use:          "project",
 	Short:        "Manage and run local web app projects",
 	SilenceUsage: true,
 }
