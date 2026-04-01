@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"proj/internal/runner"
+	"project/internal/runner"
 )
 
 var stopCmd = &cobra.Command{

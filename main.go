@@ -1,6 +1,6 @@
 package main
 
-import "proj/cmd"
+import "project/cmd"
 
 func main() {
 	cmd.Execute()

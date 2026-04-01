@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/spf13/cobra"
-	"proj/internal/store"
+	"project/internal/store"
 )
 
 var registerCmd = &cobra.Command{
