@@ -3,7 +3,7 @@ package tui
 import (
 	"fmt"
 	"time"
-
+    "os/exec"
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/table"
@@ -34,16 +34,17 @@ type keyMap struct {
 	down    key.Binding
 	toggle  key.Binding
 	refresh key.Binding
+	open    key.Binding
 	quit    key.Binding
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.toggle, k.refresh, k.quit}
+	return []key.Binding{k.toggle,k.open, k.refresh, k.quit}
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.up, k.down, k.toggle},
+		{k.up, k.down, k.toggle, k.open},
 		{k.refresh, k.quit},
 	}
 }
@@ -64,6 +65,7 @@ func NewModel() model {
 		{Title: "Ports", Width: 16},
 		{Title: "Started", Width: 10},
 		{Title: "Script", Width: 40},
+		{Title: "Dir", Width: 80},
 	}
 
 	t := table.New(
@@ -83,6 +85,7 @@ func NewModel() model {
 			toggle:  key.NewBinding(key.WithKeys("enter", " "), key.WithHelp("enter/space", "run/stop")),
 			refresh: key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
 			quit:    key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+			open:    key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "open dir")),
 		},
 		status: "Loading projects...",
 	}
@@ -128,6 +131,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, refreshCmd()
 	case tea.KeyMsg:
 		switch {
+		case key.Matches(msg, m.keys.open):
+        	it, ok := m.selected()
+        	if !ok {
+        		return m, nil
+        	}
+        	return m, openDirCmd(it)
 		case key.Matches(msg, m.keys.quit):
 			return m, tea.Quit
 		case key.Matches(msg, m.keys.refresh):
@@ -221,7 +230,24 @@ func rowsFor(items []item) []table.Row {
 			ports,
 			started,
 			it.project.Script,
+			it.project.Dir,
 		})
 	}
 	return rows
+}
+
+func openDirCmd(it item) tea.Cmd {
+	return func() tea.Msg {
+        cmd := exec.Command("osascript", "-e", fmt.Sprintf(`
+        tell application "Terminal"
+            activate
+            do script "cd %s"
+        end tell
+        `, it.project.Dir))
+
+		if err := cmd.Start(); err != nil {
+			return actionMsg{err: err}
+		}
+		return actionMsg{text: fmt.Sprintf("Opened %q in terminal.", it.project.Dir)}
+	}
 }
