@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/table"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"project/internal/runner"
@@ -37,20 +38,27 @@ type keyMap struct {
 	down    key.Binding
 	toggle  key.Binding
 	pull    key.Binding
+	edit    key.Binding
 	refresh key.Binding
 	open    key.Binding
 	quit    key.Binding
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.toggle, k.pull, k.open, k.refresh, k.quit}
+	return []key.Binding{k.toggle, k.pull, k.edit, k.open, k.refresh, k.quit}
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.up, k.down, k.toggle, k.pull, k.open},
+		{k.up, k.down, k.toggle, k.pull, k.edit, k.open},
 		{k.refresh, k.quit},
 	}
+}
+
+type editState struct {
+	originalName string
+	inputs       []textinput.Model
+	focusIndex   int
 }
 
 type model struct {
@@ -62,6 +70,7 @@ type model struct {
 	output     string
 	lastError  error
 	outputRows int
+	editing    *editState
 }
 
 func NewModel() model {
@@ -91,6 +100,7 @@ func NewModel() model {
 			down:    key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("down/j", "down")),
 			toggle:  key.NewBinding(key.WithKeys("enter", " "), key.WithHelp("enter/space", "run/stop")),
 			pull:    key.NewBinding(key.WithKeys("g"), key.WithHelp("g", "git pull")),
+			edit:    key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit name/desc")),
 			refresh: key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
 			quit:    key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 			open:    key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "open dir")),
@@ -147,6 +157,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = msg.text
 		return m, refreshCmd()
 	case tea.KeyMsg:
+		if m.editing != nil {
+			return m.updateEditing(msg)
+		}
+
 		switch {
 		case key.Matches(msg, m.keys.open):
 			it, ok := m.selected()
@@ -172,6 +186,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			return m, toggleCmd(it)
+		case key.Matches(msg, m.keys.edit):
+			it, ok := m.selected()
+			if !ok {
+				return m, nil
+			}
+			if it.running {
+				m.lastError = fmt.Errorf("project is running")
+				m.status = "Stop the project before renaming it."
+				return m, nil
+			}
+			m.editing = newEditState(it.project)
+			m.status = fmt.Sprintf("Editing %q. Tab to switch, enter to save, esc to cancel.", it.project.Name)
+			return m, nil
 		}
 	}
 
@@ -183,6 +210,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m model) View() string {
 	title := lipgloss.NewStyle().Bold(true).Render("projector TUI")
 	helpView := m.help.View(m.keys)
+	tableView := m.table.View()
+	if m.editing != nil {
+		tableView = m.editingView()
+		helpView = "tab/shift+tab: field  •  enter: save  •  esc: cancel"
+	}
 	status := m.status
 	if m.lastError != nil {
 		status = lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(status)
@@ -200,7 +232,7 @@ func (m model) View() string {
 		lipgloss.Left,
 		title,
 		"",
-		m.table.View(),
+		tableView,
 		"",
 		status,
 		"",
@@ -216,6 +248,83 @@ func (m model) selected() (item, bool) {
 		return item{}, false
 	}
 	return m.items[i], true
+}
+
+func newEditState(p store.Project) *editState {
+	nameInput := textinput.New()
+	nameInput.Placeholder = "name"
+	nameInput.SetValue(p.Name)
+	nameInput.CharLimit = 100
+	nameInput.Focus()
+
+	descriptionInput := textinput.New()
+	descriptionInput.Placeholder = "description"
+	descriptionInput.SetValue(p.Description)
+	descriptionInput.CharLimit = 200
+
+	return &editState{
+		originalName: p.Name,
+		inputs:       []textinput.Model{nameInput, descriptionInput},
+		focusIndex:   0,
+	}
+}
+
+func (m model) updateEditing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc:
+		m.editing = nil
+		m.lastError = nil
+		m.status = "Edit canceled."
+		return m, nil
+	case tea.KeyEnter:
+		nextName := strings.TrimSpace(m.editing.inputs[0].Value())
+		nextDescription := strings.TrimSpace(m.editing.inputs[1].Value())
+		if nextName == "" {
+			m.lastError = fmt.Errorf("name is required")
+			m.status = "Name cannot be empty."
+			return m, nil
+		}
+		cmd := saveMetadataCmd(m.editing.originalName, nextName, nextDescription)
+		m.editing = nil
+		m.status = "Saving changes..."
+		return m, cmd
+	case tea.KeyTab, tea.KeyShiftTab, tea.KeyUp, tea.KeyDown:
+		m.editing.blurAll()
+		if msg.Type == tea.KeyShiftTab || msg.Type == tea.KeyUp {
+			m.editing.focusIndex--
+		} else {
+			m.editing.focusIndex++
+		}
+		if m.editing.focusIndex >= len(m.editing.inputs) {
+			m.editing.focusIndex = 0
+		}
+		if m.editing.focusIndex < 0 {
+			m.editing.focusIndex = len(m.editing.inputs) - 1
+		}
+		m.editing.inputs[m.editing.focusIndex].Focus()
+		return m, nil
+	}
+
+	var cmd tea.Cmd
+	m.editing.inputs[m.editing.focusIndex], cmd = m.editing.inputs[m.editing.focusIndex].Update(msg)
+	return m, cmd
+}
+
+func (e *editState) blurAll() {
+	for i := range e.inputs {
+		e.inputs[i].Blur()
+	}
+}
+
+func (m model) editingView() string {
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		Padding(1, 2).
+		Render(fmt.Sprintf(
+			"Edit Project\n\nName\n%s\n\nDescription\n%s",
+			m.editing.inputs[0].View(),
+			m.editing.inputs[1].View(),
+		))
 }
 
 func refreshCmd() tea.Cmd {
@@ -252,6 +361,24 @@ func toggleCmd(it item) tea.Cmd {
 			return actionMsg{err: err}
 		}
 		return actionMsg{text: fmt.Sprintf("Started %q (pid %d).", it.project.Name, rs.PID)}
+	}
+}
+
+func saveMetadataCmd(currentName, nextName, nextDescription string) tea.Cmd {
+	return func() tea.Msg {
+		if err := store.UpdateMetadata(currentName, nextName, nextDescription); err != nil {
+			if err == store.ErrExists {
+				return actionMsg{
+					text: fmt.Sprintf("Project %q already exists.", nextName),
+					err:  err,
+				}
+			}
+			return actionMsg{
+				text: "Failed to update project metadata.",
+				err:  err,
+			}
+		}
+		return actionMsg{text: fmt.Sprintf("Updated project %q.", nextName)}
 	}
 }
 

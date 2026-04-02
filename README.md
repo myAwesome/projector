@@ -91,6 +91,7 @@ Keyboard controls:
 
 - `up/down` or `j/k`: move selection
 - `enter` or `space`: start/stop selected project
+- `e`: edit selected project name and description
 - `g`: run `git pull` in selected project directory
 - `o`: open project dir in terminal
 - `r`: refresh project status
