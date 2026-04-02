@@ -13,12 +13,15 @@ The TUI provides a single screen for project operations that otherwise require m
 - Shows listening TCP ports for running projects.
 - Shows project start time for running projects.
 - Allows start/stop actions for the selected row.
+- Allows running `git pull` for the selected project.
 - Supports manual refresh.
+- Shows command output in a bottom output panel.
 
 ## Keyboard controls
 
 - `up/down` or `j/k`: move selection
 - `enter` or `space`: start/stop selected project
+- `g`: run `git pull` in selected project directory
 - `r`: refresh table state
 - `q` or `ctrl+c`: quit
 
