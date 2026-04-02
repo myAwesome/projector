@@ -2,8 +2,10 @@ package tui
 
 import (
 	"fmt"
+	"os/exec"
+	"strings"
 	"time"
-    "os/exec"
+
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/table"
@@ -25,37 +27,41 @@ type refreshMsg struct {
 }
 
 type actionMsg struct {
-	text string
-	err  error
+	text   string
+	output string
+	err    error
 }
 
 type keyMap struct {
 	up      key.Binding
 	down    key.Binding
 	toggle  key.Binding
+	pull    key.Binding
 	refresh key.Binding
 	open    key.Binding
 	quit    key.Binding
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.toggle,k.open, k.refresh, k.quit}
+	return []key.Binding{k.toggle, k.pull, k.open, k.refresh, k.quit}
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.up, k.down, k.toggle, k.open},
+		{k.up, k.down, k.toggle, k.pull, k.open},
 		{k.refresh, k.quit},
 	}
 }
 
 type model struct {
-	table     table.Model
-	help      help.Model
-	keys      keyMap
-	items     []item
-	status    string
-	lastError error
+	table      table.Model
+	help       help.Model
+	keys       keyMap
+	items      []item
+	status     string
+	output     string
+	lastError  error
+	outputRows int
 }
 
 func NewModel() model {
@@ -83,11 +89,14 @@ func NewModel() model {
 			up:      key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("up/k", "up")),
 			down:    key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("down/j", "down")),
 			toggle:  key.NewBinding(key.WithKeys("enter", " "), key.WithHelp("enter/space", "run/stop")),
+			pull:    key.NewBinding(key.WithKeys("g"), key.WithHelp("g", "git pull")),
 			refresh: key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
 			quit:    key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 			open:    key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "open dir")),
 		},
-		status: "Loading projects...",
+		status:     "Loading projects...",
+		output:     "No command output yet.",
+		outputRows: 6,
 	}
 }
 
@@ -99,7 +108,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.table.SetWidth(msg.Width - 2)
-		h := msg.Height - 8
+		h := msg.Height - (m.outputRows + 9)
 		if h < 5 {
 			h = 5
 		}
@@ -121,9 +130,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case actionMsg:
+		if msg.output != "" {
+			m.output = msg.output
+		}
 		if msg.err != nil {
 			m.lastError = msg.err
-			m.status = fmt.Sprintf("Action failed: %v", msg.err)
+			if msg.text != "" {
+				m.status = msg.text
+			} else {
+				m.status = fmt.Sprintf("Action failed: %v", msg.err)
+			}
 			return m, nil
 		}
 		m.lastError = nil
@@ -132,11 +148,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, m.keys.open):
-        	it, ok := m.selected()
-        	if !ok {
-        		return m, nil
-        	}
-        	return m, openDirCmd(it)
+			it, ok := m.selected()
+			if !ok {
+				return m, nil
+			}
+			return m, openDirCmd(it)
+		case key.Matches(msg, m.keys.pull):
+			it, ok := m.selected()
+			if !ok {
+				return m, nil
+			}
+			m.status = fmt.Sprintf("Running git pull for %q...", it.project.Name)
+			return m, gitPullCmd(it)
 		case key.Matches(msg, m.keys.quit):
 			return m, tea.Quit
 		case key.Matches(msg, m.keys.refresh):
@@ -163,7 +186,27 @@ func (m model) View() string {
 	if m.lastError != nil {
 		status = lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(status)
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, title, "", m.table.View(), "", status, helpView)
+
+	outputTitle := lipgloss.NewStyle().Bold(true).Render("Output")
+	outputBody := lastNLines(m.output, m.outputRows)
+	outputView := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		Padding(0, 1).
+		Height(m.outputRows).
+		Render(outputBody)
+
+	return lipgloss.JoinVertical(
+		lipgloss.Left,
+		title,
+		"",
+		m.table.View(),
+		"",
+		status,
+		"",
+		outputTitle,
+		outputView,
+		helpView,
+	)
 }
 
 func (m model) selected() (item, bool) {
@@ -211,6 +254,31 @@ func toggleCmd(it item) tea.Cmd {
 	}
 }
 
+func gitPullCmd(it item) tea.Cmd {
+	return func() tea.Msg {
+		cmd := exec.Command("git", "-C", it.project.Dir, "pull")
+		out, err := cmd.CombinedOutput()
+
+		output := strings.TrimSpace(string(out))
+		if output == "" {
+			output = "(no output)"
+		}
+
+		if err != nil {
+			return actionMsg{
+				text:   fmt.Sprintf("git pull failed for %q.", it.project.Name),
+				output: output,
+				err:    err,
+			}
+		}
+
+		return actionMsg{
+			text:   fmt.Sprintf("git pull finished for %q.", it.project.Name),
+			output: output,
+		}
+	}
+}
+
 func rowsFor(items []item) []table.Row {
 	rows := make([]table.Row, 0, len(items))
 	for _, it := range items {
@@ -238,7 +306,7 @@ func rowsFor(items []item) []table.Row {
 
 func openDirCmd(it item) tea.Cmd {
 	return func() tea.Msg {
-        cmd := exec.Command("osascript", "-e", fmt.Sprintf(`
+		cmd := exec.Command("osascript", "-e", fmt.Sprintf(`
         tell application "Terminal"
             activate
             do script "cd %s"
@@ -250,4 +318,12 @@ func openDirCmd(it item) tea.Cmd {
 		}
 		return actionMsg{text: fmt.Sprintf("Opened %q in terminal.", it.project.Dir)}
 	}
+}
+
+func lastNLines(s string, n int) string {
+	lines := strings.Split(s, "\n")
+	if len(lines) <= n {
+		return strings.Join(lines, "\n")
+	}
+	return strings.Join(lines[len(lines)-n:], "\n")
 }
