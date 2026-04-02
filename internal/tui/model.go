@@ -87,12 +87,12 @@ type model struct {
 func NewModel() model {
 	cols := []table.Column{
 		{Title: "Name", Width: 16},
-		{Title: "Description", Width: 50},
-		{Title: "Status", Width: 10},
+		{Title: "Description", Width: 40},
+		{Title: "Status", Width: 16},
 		{Title: "Ports", Width: 16},
 		{Title: "Started", Width: 10},
 		{Title: "Script", Width: 16},
-		{Title: "Dir", Width: 50},
+		{Title: "Dir", Width: 40},
 	}
 
 	t := table.New(
