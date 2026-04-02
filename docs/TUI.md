@@ -15,7 +15,8 @@ The TUI provides a single screen for project operations that otherwise require m
 - Shows project start time for running projects.
 - Allows start/stop actions for the selected row.
 - Allows registering a new project from the TUI.
-- Allows editing selected project name and description.
+- Allows editing selected project name, description, directory, and script.
+- Allows removing a selected project.
 - Allows running `git pull` for the selected project.
 - Supports manual refresh.
 - Shows command output in a bottom output panel.
@@ -25,7 +26,8 @@ The TUI provides a single screen for project operations that otherwise require m
 - `up/down` or `j/k`: move selection
 - `enter` or `space`: start/stop selected project
 - `n`: register a new project (`name`, `dir`, `script`, `description`)
-- `e`: edit selected project name and description
+- `e`: edit selected project (`name`, `dir`, `script`, `description`)
+- `x`: remove selected project (press twice to confirm)
 - `g`: run `git pull` in selected project directory
 - `r`: refresh table state
 - `q` or `ctrl+c`: quit
@@ -50,4 +52,4 @@ The TUI provides a single screen for project operations that otherwise require m
 
 - Port discovery relies on `lsof` and `pgrep` (macOS-focused behavior).
 - Refresh is manual (`r`) rather than periodic auto-refresh.
-- Renaming is blocked while a project is running.
+- Editing/removal is blocked while a project is running.

@@ -41,6 +41,7 @@ type keyMap struct {
 	toggle   key.Binding
 	pull     key.Binding
 	edit     key.Binding
+	remove   key.Binding
 	register key.Binding
 	refresh  key.Binding
 	open     key.Binding
@@ -48,12 +49,12 @@ type keyMap struct {
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.toggle, k.register, k.pull, k.edit, k.open, k.refresh, k.quit}
+	return []key.Binding{k.toggle, k.register, k.pull, k.edit, k.remove, k.open, k.refresh, k.quit}
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.up, k.down, k.toggle, k.register, k.pull, k.edit, k.open},
+		{k.up, k.down, k.toggle, k.register, k.pull, k.edit, k.remove, k.open},
 		{k.refresh, k.quit},
 	}
 }
@@ -70,16 +71,17 @@ type registerState struct {
 }
 
 type model struct {
-	table       table.Model
-	help        help.Model
-	keys        keyMap
-	items       []item
-	status      string
-	output      string
-	lastError   error
-	outputRows  int
-	editing     *editState
-	registering *registerState
+	table         table.Model
+	help          help.Model
+	keys          keyMap
+	items         []item
+	status        string
+	output        string
+	lastError     error
+	outputRows    int
+	editing       *editState
+	registering   *registerState
+	pendingDelete string
 }
 
 func NewModel() model {
@@ -110,7 +112,8 @@ func NewModel() model {
 			toggle:   key.NewBinding(key.WithKeys("enter", " "), key.WithHelp("enter/space", "run/stop")),
 			register: key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "register project")),
 			pull:     key.NewBinding(key.WithKeys("g"), key.WithHelp("g", "git pull")),
-			edit:     key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit name/desc")),
+			edit:     key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit project")),
+			remove:   key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "remove project")),
 			refresh:  key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
 			quit:     key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 			open:     key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "open dir")),
@@ -141,6 +144,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = fmt.Sprintf("Refresh failed: %v", msg.err)
 			return m, nil
 		}
+		m.pendingDelete = ""
 		m.lastError = nil
 		m.items = msg.items
 		m.table.SetRows(rowsFor(msg.items))
@@ -176,12 +180,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		switch {
 		case key.Matches(msg, m.keys.open):
+			m.pendingDelete = ""
 			it, ok := m.selected()
 			if !ok {
 				return m, nil
 			}
 			return m, openDirCmd(it)
 		case key.Matches(msg, m.keys.pull):
+			m.pendingDelete = ""
 			it, ok := m.selected()
 			if !ok {
 				return m, nil
@@ -191,32 +197,57 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.quit):
 			return m, tea.Quit
 		case key.Matches(msg, m.keys.refresh):
+			m.pendingDelete = ""
 			m.status = "Refreshing..."
 			return m, refreshCmd()
 		case key.Matches(msg, m.keys.toggle):
+			m.pendingDelete = ""
 			it, ok := m.selected()
 			if !ok {
 				return m, nil
 			}
 			return m, toggleCmd(it)
 		case key.Matches(msg, m.keys.edit):
+			m.pendingDelete = ""
 			it, ok := m.selected()
 			if !ok {
 				return m, nil
 			}
 			if it.running {
 				m.lastError = fmt.Errorf("project is running")
-				m.status = "Stop the project before renaming it."
+				m.status = "Stop the project before editing it."
 				return m, nil
 			}
 			m.editing = newEditState(it.project)
 			m.status = fmt.Sprintf("Editing %q. Tab to switch, enter to save, esc to cancel.", it.project.Name)
 			return m, nil
+		case key.Matches(msg, m.keys.remove):
+			it, ok := m.selected()
+			if !ok {
+				return m, nil
+			}
+			if it.running {
+				m.pendingDelete = ""
+				m.lastError = fmt.Errorf("project is running")
+				m.status = "Stop the project before removing it."
+				return m, nil
+			}
+			if m.pendingDelete == it.project.Name {
+				m.pendingDelete = ""
+				m.status = fmt.Sprintf("Removing %q...", it.project.Name)
+				return m, removeProjectCmd(it.project.Name)
+			}
+			m.pendingDelete = it.project.Name
+			m.lastError = nil
+			m.status = fmt.Sprintf("Press x again to remove %q.", it.project.Name)
+			return m, nil
 		case key.Matches(msg, m.keys.register):
+			m.pendingDelete = ""
 			m.registering = newRegisterState()
 			m.status = "Registering project. Tab to switch, enter to save, esc to cancel."
 			return m, nil
 		}
+		m.pendingDelete = ""
 	}
 
 	var cmd tea.Cmd
@@ -277,6 +308,16 @@ func newEditState(p store.Project) *editState {
 	nameInput.CharLimit = 100
 	nameInput.Focus()
 
+	dirInput := textinput.New()
+	dirInput.Placeholder = "project directory"
+	dirInput.SetValue(p.Dir)
+	dirInput.CharLimit = 300
+
+	scriptInput := textinput.New()
+	scriptInput.Placeholder = "launch script or command"
+	scriptInput.SetValue(p.Script)
+	scriptInput.CharLimit = 300
+
 	descriptionInput := textinput.New()
 	descriptionInput.Placeholder = "description"
 	descriptionInput.SetValue(p.Description)
@@ -284,7 +325,7 @@ func newEditState(p store.Project) *editState {
 
 	return &editState{
 		originalName: p.Name,
-		inputs:       []textinput.Model{nameInput, descriptionInput},
+		inputs:       []textinput.Model{nameInput, dirInput, scriptInput, descriptionInput},
 		focusIndex:   0,
 	}
 }
@@ -298,13 +339,15 @@ func (m model) updateEditing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyEnter:
 		nextName := strings.TrimSpace(m.editing.inputs[0].Value())
-		nextDescription := strings.TrimSpace(m.editing.inputs[1].Value())
-		if nextName == "" {
-			m.lastError = fmt.Errorf("name is required")
-			m.status = "Name cannot be empty."
+		nextDir := strings.TrimSpace(m.editing.inputs[1].Value())
+		nextScript := strings.TrimSpace(m.editing.inputs[2].Value())
+		nextDescription := strings.TrimSpace(m.editing.inputs[3].Value())
+		if nextName == "" || nextDir == "" || nextScript == "" {
+			m.lastError = fmt.Errorf("missing required fields")
+			m.status = "Name, dir, and script are required."
 			return m, nil
 		}
-		cmd := saveMetadataCmd(m.editing.originalName, nextName, nextDescription)
+		cmd := saveProjectCmd(m.editing.originalName, nextName, nextDescription, nextDir, nextScript)
 		m.editing = nil
 		m.status = "Saving changes..."
 		return m, cmd
@@ -371,9 +414,11 @@ func (m model) editingView() string {
 		Border(lipgloss.RoundedBorder()).
 		Padding(1, 2).
 		Render(fmt.Sprintf(
-			"Edit Project\n\nName\n%s\n\nDescription\n%s",
+			"Edit Project\n\nName\n%s\n\nDir\n%s\n\nScript\n%s\n\nDescription\n%s",
 			m.editing.inputs[0].View(),
 			m.editing.inputs[1].View(),
+			m.editing.inputs[2].View(),
+			m.editing.inputs[3].View(),
 		))
 }
 
@@ -502,9 +547,17 @@ func registerProjectCmd(name, dir, script, description string) tea.Cmd {
 	}
 }
 
-func saveMetadataCmd(currentName, nextName, nextDescription string) tea.Cmd {
+func saveProjectCmd(currentName, nextName, nextDescription, nextDir, nextScript string) tea.Cmd {
 	return func() tea.Msg {
-		if err := store.UpdateMetadata(currentName, nextName, nextDescription); err != nil {
+		absDir, err := filepath.Abs(nextDir)
+		if err != nil {
+			return actionMsg{
+				text: "Failed to resolve project directory.",
+				err:  err,
+			}
+		}
+
+		if err := store.UpdateProject(currentName, nextName, nextDescription, absDir, nextScript); err != nil {
 			if err == store.ErrExists {
 				return actionMsg{
 					text: fmt.Sprintf("Project %q already exists.", nextName),
@@ -517,6 +570,25 @@ func saveMetadataCmd(currentName, nextName, nextDescription string) tea.Cmd {
 			}
 		}
 		return actionMsg{text: fmt.Sprintf("Updated project %q.", nextName)}
+	}
+}
+
+func removeProjectCmd(name string) tea.Cmd {
+	return func() tea.Msg {
+		if err := store.Remove(name); err != nil {
+			if err == store.ErrNotFound {
+				return actionMsg{
+					text: fmt.Sprintf("Project %q was not found.", name),
+					err:  err,
+				}
+			}
+			return actionMsg{
+				text: fmt.Sprintf("Failed to remove %q.", name),
+				err:  err,
+			}
+		}
+
+		return actionMsg{text: fmt.Sprintf("Removed %q.", name)}
 	}
 }
 
