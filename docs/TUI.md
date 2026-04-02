@@ -14,6 +14,7 @@ The TUI provides a single screen for project operations that otherwise require m
 - Shows listening TCP ports for running projects.
 - Shows project start time for running projects.
 - Allows start/stop actions for the selected row.
+- Allows registering a new project from the TUI.
 - Allows editing selected project name and description.
 - Allows running `git pull` for the selected project.
 - Supports manual refresh.
@@ -23,6 +24,7 @@ The TUI provides a single screen for project operations that otherwise require m
 
 - `up/down` or `j/k`: move selection
 - `enter` or `space`: start/stop selected project
+- `n`: register a new project (`name`, `dir`, `script`, `description`)
 - `e`: edit selected project name and description
 - `g`: run `git pull` in selected project directory
 - `r`: refresh table state

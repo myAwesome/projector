@@ -1,8 +1,10 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -34,23 +36,24 @@ type actionMsg struct {
 }
 
 type keyMap struct {
-	up      key.Binding
-	down    key.Binding
-	toggle  key.Binding
-	pull    key.Binding
-	edit    key.Binding
-	refresh key.Binding
-	open    key.Binding
-	quit    key.Binding
+	up       key.Binding
+	down     key.Binding
+	toggle   key.Binding
+	pull     key.Binding
+	edit     key.Binding
+	register key.Binding
+	refresh  key.Binding
+	open     key.Binding
+	quit     key.Binding
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.toggle, k.pull, k.edit, k.open, k.refresh, k.quit}
+	return []key.Binding{k.toggle, k.register, k.pull, k.edit, k.open, k.refresh, k.quit}
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.up, k.down, k.toggle, k.pull, k.edit, k.open},
+		{k.up, k.down, k.toggle, k.register, k.pull, k.edit, k.open},
 		{k.refresh, k.quit},
 	}
 }
@@ -61,16 +64,22 @@ type editState struct {
 	focusIndex   int
 }
 
+type registerState struct {
+	inputs     []textinput.Model
+	focusIndex int
+}
+
 type model struct {
-	table      table.Model
-	help       help.Model
-	keys       keyMap
-	items      []item
-	status     string
-	output     string
-	lastError  error
-	outputRows int
-	editing    *editState
+	table       table.Model
+	help        help.Model
+	keys        keyMap
+	items       []item
+	status      string
+	output      string
+	lastError   error
+	outputRows  int
+	editing     *editState
+	registering *registerState
 }
 
 func NewModel() model {
@@ -96,14 +105,15 @@ func NewModel() model {
 		table: t,
 		help:  help.New(),
 		keys: keyMap{
-			up:      key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("up/k", "up")),
-			down:    key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("down/j", "down")),
-			toggle:  key.NewBinding(key.WithKeys("enter", " "), key.WithHelp("enter/space", "run/stop")),
-			pull:    key.NewBinding(key.WithKeys("g"), key.WithHelp("g", "git pull")),
-			edit:    key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit name/desc")),
-			refresh: key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
-			quit:    key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
-			open:    key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "open dir")),
+			up:       key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("up/k", "up")),
+			down:     key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("down/j", "down")),
+			toggle:   key.NewBinding(key.WithKeys("enter", " "), key.WithHelp("enter/space", "run/stop")),
+			register: key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "register project")),
+			pull:     key.NewBinding(key.WithKeys("g"), key.WithHelp("g", "git pull")),
+			edit:     key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit name/desc")),
+			refresh:  key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
+			quit:     key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+			open:     key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "open dir")),
 		},
 		status:     "Loading projects...",
 		output:     "No command output yet.",
@@ -135,7 +145,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.items = msg.items
 		m.table.SetRows(rowsFor(msg.items))
 		if len(msg.items) == 0 {
-			m.status = "No projects registered. Use: proj register ..."
+			m.status = "No projects registered. Press n to add one."
 		} else {
 			m.status = fmt.Sprintf("%d project(s). Press enter to run/stop selected.", len(msg.items))
 		}
@@ -159,6 +169,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		if m.editing != nil {
 			return m.updateEditing(msg)
+		}
+		if m.registering != nil {
+			return m.updateRegistering(msg)
 		}
 
 		switch {
@@ -199,6 +212,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.editing = newEditState(it.project)
 			m.status = fmt.Sprintf("Editing %q. Tab to switch, enter to save, esc to cancel.", it.project.Name)
 			return m, nil
+		case key.Matches(msg, m.keys.register):
+			m.registering = newRegisterState()
+			m.status = "Registering project. Tab to switch, enter to save, esc to cancel."
+			return m, nil
 		}
 	}
 
@@ -213,6 +230,9 @@ func (m model) View() string {
 	tableView := m.table.View()
 	if m.editing != nil {
 		tableView = m.editingView()
+		helpView = "tab/shift+tab: field  •  enter: save  •  esc: cancel"
+	} else if m.registering != nil {
+		tableView = m.registeringView()
 		helpView = "tab/shift+tab: field  •  enter: save  •  esc: cancel"
 	}
 	status := m.status
@@ -316,6 +336,36 @@ func (e *editState) blurAll() {
 	}
 }
 
+func newRegisterState() *registerState {
+	nameInput := textinput.New()
+	nameInput.Placeholder = "name"
+	nameInput.CharLimit = 100
+	nameInput.Focus()
+
+	dirInput := textinput.New()
+	dirInput.Placeholder = "project directory"
+	dirInput.CharLimit = 300
+
+	scriptInput := textinput.New()
+	scriptInput.Placeholder = "launch script or command"
+	scriptInput.CharLimit = 300
+
+	descriptionInput := textinput.New()
+	descriptionInput.Placeholder = "description (optional)"
+	descriptionInput.CharLimit = 200
+
+	return &registerState{
+		inputs:     []textinput.Model{nameInput, dirInput, scriptInput, descriptionInput},
+		focusIndex: 0,
+	}
+}
+
+func (r *registerState) blurAll() {
+	for i := range r.inputs {
+		r.inputs[i].Blur()
+	}
+}
+
 func (m model) editingView() string {
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -324,6 +374,62 @@ func (m model) editingView() string {
 			"Edit Project\n\nName\n%s\n\nDescription\n%s",
 			m.editing.inputs[0].View(),
 			m.editing.inputs[1].View(),
+		))
+}
+
+func (m model) updateRegistering(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc:
+		m.registering = nil
+		m.lastError = nil
+		m.status = "Register canceled."
+		return m, nil
+	case tea.KeyEnter:
+		name := strings.TrimSpace(m.registering.inputs[0].Value())
+		dir := strings.TrimSpace(m.registering.inputs[1].Value())
+		script := strings.TrimSpace(m.registering.inputs[2].Value())
+		description := strings.TrimSpace(m.registering.inputs[3].Value())
+		if name == "" || dir == "" || script == "" {
+			m.lastError = fmt.Errorf("missing required fields")
+			m.status = "Name, dir, and script are required."
+			return m, nil
+		}
+		cmd := registerProjectCmd(name, dir, script, description)
+		m.registering = nil
+		m.status = "Registering project..."
+		return m, cmd
+	case tea.KeyTab, tea.KeyShiftTab, tea.KeyUp, tea.KeyDown:
+		m.registering.blurAll()
+		if msg.Type == tea.KeyShiftTab || msg.Type == tea.KeyUp {
+			m.registering.focusIndex--
+		} else {
+			m.registering.focusIndex++
+		}
+		if m.registering.focusIndex >= len(m.registering.inputs) {
+			m.registering.focusIndex = 0
+		}
+		if m.registering.focusIndex < 0 {
+			m.registering.focusIndex = len(m.registering.inputs) - 1
+		}
+		m.registering.inputs[m.registering.focusIndex].Focus()
+		return m, nil
+	}
+
+	var cmd tea.Cmd
+	m.registering.inputs[m.registering.focusIndex], cmd = m.registering.inputs[m.registering.focusIndex].Update(msg)
+	return m, cmd
+}
+
+func (m model) registeringView() string {
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		Padding(1, 2).
+		Render(fmt.Sprintf(
+			"Register Project\n\nName\n%s\n\nDir\n%s\n\nScript\n%s\n\nDescription\n%s",
+			m.registering.inputs[0].View(),
+			m.registering.inputs[1].View(),
+			m.registering.inputs[2].View(),
+			m.registering.inputs[3].View(),
 		))
 }
 
@@ -361,6 +467,38 @@ func toggleCmd(it item) tea.Cmd {
 			return actionMsg{err: err}
 		}
 		return actionMsg{text: fmt.Sprintf("Started %q (pid %d).", it.project.Name, rs.PID)}
+	}
+}
+
+func registerProjectCmd(name, dir, script, description string) tea.Cmd {
+	return func() tea.Msg {
+		absDir, err := filepath.Abs(dir)
+		if err != nil {
+			return actionMsg{
+				text: "Failed to resolve project directory.",
+				err:  err,
+			}
+		}
+
+		err = store.Add(store.Project{
+			Name:        name,
+			Description: description,
+			Dir:         absDir,
+			Script:      script,
+		})
+		if errors.Is(err, store.ErrExists) {
+			return actionMsg{
+				text: fmt.Sprintf("Project %q already exists.", name),
+				err:  err,
+			}
+		}
+		if err != nil {
+			return actionMsg{
+				text: "Failed to register project.",
+				err:  err,
+			}
+		}
+		return actionMsg{text: fmt.Sprintf("Registered %q (%s).", name, absDir)}
 	}
 }
 
