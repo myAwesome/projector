@@ -24,7 +24,7 @@ var listCmd = &cobra.Command{
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "NAME\tSTATUS\tPORTS\tSTARTED\tSCRIPT")
+		fmt.Fprintln(w, "NAME\tDESCRIPTION\tSTATUS\tPORTS\tSTARTED\tSCRIPT")
 		for _, p := range projects {
 			status := "stopped"
 			ports := "-"
@@ -36,7 +36,12 @@ var listCmd = &cobra.Command{
 				started = rs.StartedAt.Format("15:04:05")
 			}
 
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", p.Name, status, ports, started, p.Script)
+			description := p.Description
+			if description == "" {
+				description = "-"
+			}
+
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", p.Name, description, status, ports, started, p.Script)
 		}
 		return w.Flush()
 	},

@@ -9,10 +9,11 @@ import (
 )
 
 type Project struct {
-	Name      string    `json:"name"`
-	Dir       string    `json:"dir"`
-	Script    string    `json:"script"`
-	CreatedAt time.Time `json:"created_at"`
+	Name        string    `json:"name"`
+	Description string    `json:"description,omitempty"`
+	Dir         string    `json:"dir"`
+	Script      string    `json:"script"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 var ErrNotFound = errors.New("project not found")

@@ -16,6 +16,7 @@ var registerCmd = &cobra.Command{
 		name, _ := cmd.Flags().GetString("name")
 		dir, _ := cmd.Flags().GetString("dir")
 		script, _ := cmd.Flags().GetString("script")
+		description, _ := cmd.Flags().GetString("description")
 
 		if name == "" || dir == "" || script == "" {
 			return fmt.Errorf("--name, --dir, and --script are required")
@@ -27,9 +28,10 @@ var registerCmd = &cobra.Command{
 		}
 
 		err = store.Add(store.Project{
-			Name:   name,
-			Dir:    absDir,
-			Script: script,
+			Name:        name,
+			Description: description,
+			Dir:         absDir,
+			Script:      script,
 		})
 		if errors.Is(err, store.ErrExists) {
 			return fmt.Errorf("project %q already exists", name)
@@ -47,5 +49,6 @@ func init() {
 	registerCmd.Flags().String("name", "", "project name")
 	registerCmd.Flags().String("dir", "", "project directory")
 	registerCmd.Flags().String("script", "", "launch script or command")
+	registerCmd.Flags().StringP("description", "d", "", "short project description")
 	rootCmd.AddCommand(registerCmd)
 }
