@@ -103,9 +103,15 @@ func NewModel() model {
 	)
 	t.SetStyles(table.DefaultStyles())
 
+	h := help.New()
+	h.Styles.ShortKey = lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true)
+	h.Styles.FullKey = lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true)
+	h.Styles.ShortDesc = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	h.Styles.FullDesc = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+
 	return model{
 		table: t,
-		help:  help.New(),
+		help:  h,
 		keys: keyMap{
 			up:       key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("up/k", "up")),
 			down:     key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("down/j", "down")),
@@ -261,10 +267,10 @@ func (m model) View() string {
 	tableView := m.table.View()
 	if m.editing != nil {
 		tableView = m.editingView()
-		helpView = "tab/shift+tab: field  •  enter: save  •  esc: cancel"
+		helpView = formHelpView()
 	} else if m.registering != nil {
 		tableView = m.registeringView()
-		helpView = "tab/shift+tab: field  •  enter: save  •  esc: cancel"
+		helpView = formHelpView()
 	}
 	status := m.status
 	if m.lastError != nil {
@@ -290,6 +296,20 @@ func (m model) View() string {
 		outputTitle,
 		outputView,
 		helpView,
+	)
+}
+
+func formHelpView() string {
+	keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true)
+	descStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+
+	return lipgloss.JoinHorizontal(
+		lipgloss.Left,
+		keyStyle.Render("tab/shift+tab")+": "+descStyle.Render("field"),
+		"  •  ",
+		keyStyle.Render("enter")+": "+descStyle.Render("save"),
+		"  •  ",
+		keyStyle.Render("esc")+": "+descStyle.Render("cancel"),
 	)
 }
 
