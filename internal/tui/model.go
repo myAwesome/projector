@@ -67,6 +67,7 @@ type model struct {
 func NewModel() model {
 	cols := []table.Column{
 		{Title: "Name", Width: 16},
+		{Title: "Description", Width: 24},
 		{Title: "Status", Width: 22},
 		{Title: "Ports", Width: 16},
 		{Title: "Started", Width: 10},
@@ -291,9 +292,14 @@ func rowsFor(items []item) []table.Row {
 			ports = runner.FormatPorts(runner.Ports(it.rs.PGID, it.rs.PID))
 			started = it.rs.StartedAt.Local().Format(time.TimeOnly)
 		}
+		description := it.project.Description
+		if description == "" {
+			description = "-"
+		}
 
 		rows = append(rows, table.Row{
 			it.project.Name,
+			description,
 			status,
 			ports,
 			started,

@@ -9,6 +9,7 @@ The TUI provides a single screen for project operations that otherwise require m
 ## Features
 
 - Displays registered projects in a table.
+- Shows each project's optional description.
 - Shows per-project status (`stopped` or `running (pid X)`).
 - Shows listening TCP ports for running projects.
 - Shows project start time for running projects.
