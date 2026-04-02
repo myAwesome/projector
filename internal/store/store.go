@@ -91,7 +91,7 @@ func Find(name string) (Project, error) {
 	return Project{}, ErrNotFound
 }
 
-func UpdateMetadata(currentName, nextName, nextDescription string) error {
+func UpdateProject(currentName, nextName, nextDescription, nextDir, nextScript string) error {
 	projects, err := Load()
 	if err != nil {
 		return err
@@ -118,5 +118,22 @@ func UpdateMetadata(currentName, nextName, nextDescription string) error {
 
 	projects[idx].Name = nextName
 	projects[idx].Description = nextDescription
+	projects[idx].Dir = nextDir
+	projects[idx].Script = nextScript
 	return save(projects)
+}
+
+func Remove(name string) error {
+	projects, err := Load()
+	if err != nil {
+		return err
+	}
+
+	for i, p := range projects {
+		if p.Name == name {
+			return save(append(projects[:i], projects[i+1:]...))
+		}
+	}
+
+	return ErrNotFound
 }
