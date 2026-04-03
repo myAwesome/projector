@@ -138,11 +138,23 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.table.SetWidth(msg.Width - 2)
-		h := msg.Height - (m.outputRows + 9)
-		if h < 5 {
-			h = 5
+		usableRows := msg.Height - 9
+		if usableRows < 8 {
+			usableRows = 8
 		}
-		m.table.SetHeight(h)
+
+		topRows := usableRows / 2
+		bottomRows := usableRows - topRows
+		if topRows < 4 {
+			topRows = 4
+			bottomRows = usableRows - topRows
+		}
+		if bottomRows < 4 {
+			bottomRows = 4
+		}
+
+		m.table.SetHeight(topRows)
+		m.outputRows = bottomRows
 		return m, nil
 	case refreshMsg:
 		if msg.err != nil {
