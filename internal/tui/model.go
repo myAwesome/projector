@@ -629,6 +629,7 @@ func (m model) updateTerminal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyEsc:
 		projectName := m.terminal.projectName
 		m.terminal = nil
+		m.output = "No command output yet."
 		m.lastError = nil
 		m.status = fmt.Sprintf("Closed proxy terminal for %q.", projectName)
 		return m, nil
