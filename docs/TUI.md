@@ -1,10 +1,10 @@
 # TUI Guide
 
-`proj tui` starts an interactive terminal UI built with Bubble Tea + Bubbles.
+`project` starts an interactive terminal UI built with Bubble Tea + Bubbles.
 
 ## Purpose
 
-The TUI provides a single screen for project operations that otherwise require multiple CLI calls.
+The TUI provides a single screen for project operations.
 
 ## Features
 
@@ -29,6 +29,7 @@ The TUI provides a single screen for project operations that otherwise require m
 - `e`: edit selected project (`name`, `dir`, `script`, `description`)
 - `x`: remove selected project (press twice to confirm)
 - `g`: run `git pull` in selected project directory
+- `o`: open selected project directory in terminal
 - `r`: refresh table state
 - `q` or `ctrl+c`: quit
 
@@ -41,12 +42,12 @@ The TUI provides a single screen for project operations that otherwise require m
    - if stopped -> `runner.Start(project)`
    - if running -> `runner.Stop(name)`
 
-## Scope and compatibility
+## Storage
 
-- The TUI is additive and does not replace existing CLI commands.
-- Project metadata and run state are stored in the same files:
-  - `~/.config/proj/projects.json`
-  - `~/.config/proj/state.json`
+Project metadata and run state are stored in:
+
+- `~/.config/project/projects.json`
+- `~/.config/project/state.json`
 
 ## Known limitations
 
