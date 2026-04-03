@@ -79,6 +79,7 @@ type model struct {
 	output        string
 	lastError     error
 	outputRows    int
+	viewWidth     int
 	editing       *editState
 	registering   *registerState
 	pendingDelete string
@@ -137,8 +138,15 @@ func (m model) Init() tea.Cmd {
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.table.SetWidth(msg.Width - 2)
-		usableRows := msg.Height - 9
+		m.viewWidth = msg.Width
+		tablePanelStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder())
+		tableWidth := msg.Width - tablePanelStyle.GetHorizontalFrameSize()
+		if tableWidth < 20 {
+			tableWidth = 20
+		}
+		m.table.SetWidth(tableWidth)
+
+		usableRows := msg.Height - 12
 		if usableRows < 8 {
 			usableRows = 8
 		}
@@ -289,24 +297,47 @@ func (m model) View() string {
 		status = lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(status)
 	}
 
+	tablePanelStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder())
+	if m.viewWidth > 0 {
+		tablePanelWidth := m.viewWidth - tablePanelStyle.GetHorizontalFrameSize()
+		if tablePanelWidth > 0 {
+			tablePanelStyle = tablePanelStyle.Width(tablePanelWidth)
+		}
+	}
+	tablePanel := tablePanelStyle.Render(tableView)
+
 	outputTitle := lipgloss.NewStyle().Bold(true).Render("Output")
 	outputBody := lastNLines(m.output, m.outputRows)
-	outputView := lipgloss.NewStyle().
+	outputStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		Padding(0, 1).
+		Padding(0, 1)
+	if m.viewWidth > 0 {
+		outputWidth := m.viewWidth - outputStyle.GetHorizontalFrameSize()
+		if outputWidth > 0 {
+			outputStyle = outputStyle.Width(outputWidth)
+		}
+	}
+	outputView := outputStyle.
 		Height(m.outputRows).
 		Render(outputBody)
+
+	dividerWidth := m.viewWidth
+	if dividerWidth <= 0 {
+		dividerWidth = 80
+	}
+	divider := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(strings.Repeat("─", dividerWidth))
 
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
 		title,
 		"",
-		tableView,
+		tablePanel,
 		"",
 		status,
 		"",
 		outputTitle,
 		outputView,
+		divider,
 		helpView,
 	)
 }
