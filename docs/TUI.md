@@ -29,7 +29,7 @@ The TUI provides a single screen for project operations.
 - `e`: edit selected project (`name`, `dir`, `script`, `description`)
 - `x`: remove selected project (press twice to confirm)
 - `g`: run `git pull` in selected project directory
-- `o`: open selected project directory in terminal
+- `o`: open selected project directory in Output proxy terminal
 - `r`: refresh table state
 - `q` or `ctrl+c`: quit
 

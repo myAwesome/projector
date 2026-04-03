@@ -3,6 +3,7 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -30,8 +31,16 @@ type refreshMsg struct {
 }
 
 type actionMsg struct {
-	text   string
+	text         string
+	output       string
+	err          error
+	appendOutput bool
+}
+
+type terminalCmdMsg struct {
+	status string
 	output string
+	cwd    string
 	err    error
 }
 
@@ -70,6 +79,12 @@ type registerState struct {
 	focusIndex int
 }
 
+type terminalState struct {
+	projectName string
+	cwd         string
+	input       textinput.Model
+}
+
 type model struct {
 	table         table.Model
 	help          help.Model
@@ -82,6 +97,7 @@ type model struct {
 	viewWidth     int
 	editing       *editState
 	registering   *registerState
+	terminal      *terminalState
 	pendingDelete string
 }
 
@@ -182,7 +198,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case actionMsg:
 		if msg.output != "" {
-			m.output = msg.output
+			if msg.appendOutput {
+				m.output = appendOutput(m.output, msg.output)
+			} else {
+				m.output = msg.output
+			}
 		}
 		if msg.err != nil {
 			m.lastError = msg.err
@@ -196,7 +216,29 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.lastError = nil
 		m.status = msg.text
 		return m, refreshCmd()
+	case terminalCmdMsg:
+		if msg.output != "" {
+			m.output = appendOutput(m.output, msg.output)
+		}
+		if msg.cwd != "" && m.terminal != nil {
+			m.terminal.cwd = msg.cwd
+		}
+		if msg.err != nil {
+			m.lastError = msg.err
+			if msg.status != "" {
+				m.status = msg.status
+			} else {
+				m.status = fmt.Sprintf("Command failed: %v", msg.err)
+			}
+			return m, nil
+		}
+		m.lastError = nil
+		m.status = msg.status
+		return m, nil
 	case tea.KeyMsg:
+		if m.terminal != nil {
+			return m.updateTerminal(msg)
+		}
 		if m.editing != nil {
 			return m.updateEditing(msg)
 		}
@@ -211,7 +253,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !ok {
 				return m, nil
 			}
-			return m, openDirCmd(it)
+			m.terminal = newTerminalState(it)
+			m.output = appendOutput(m.output, fmt.Sprintf("Proxy terminal opened for %q in %s", it.project.Name, it.project.Dir))
+			m.status = fmt.Sprintf("Proxy terminal ready for %q. Enter to run, esc to close.", it.project.Name)
+			return m, nil
 		case key.Matches(msg, m.keys.pull):
 			m.pendingDelete = ""
 			it, ok := m.selected()
@@ -291,6 +336,8 @@ func (m model) View() string {
 	} else if m.registering != nil {
 		tableView = m.registeringView()
 		helpView = formHelpView()
+	} else if m.terminal != nil {
+		helpView = terminalHelpView()
 	}
 	status := m.status
 	if m.lastError != nil {
@@ -307,7 +354,18 @@ func (m model) View() string {
 	tablePanel := tablePanelStyle.Render(tableView)
 
 	outputTitle := lipgloss.NewStyle().Bold(true).Render("Output")
-	outputBody := lastNLines(m.output, m.outputRows)
+	outputBodyRows := m.outputRows
+	if m.terminal != nil {
+		outputBodyRows = m.outputRows - 2
+		if outputBodyRows < 1 {
+			outputBodyRows = 1
+		}
+	}
+	outputBody := lastNLines(m.output, outputBodyRows)
+	if m.terminal != nil {
+		prompt := lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(m.terminal.cwd + " $ ")
+		outputBody = lipgloss.JoinVertical(lipgloss.Left, outputBody, "", prompt+m.terminal.input.View())
+	}
 	outputStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		Padding(0, 1)
@@ -353,6 +411,18 @@ func formHelpView() string {
 		keyStyle.Render("enter")+": "+descStyle.Render("save"),
 		"  •  ",
 		keyStyle.Render("esc")+": "+descStyle.Render("cancel"),
+	)
+}
+
+func terminalHelpView() string {
+	keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true)
+	descStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+
+	return lipgloss.JoinHorizontal(
+		lipgloss.Left,
+		keyStyle.Render("enter")+": "+descStyle.Render("run command"),
+		"  •  ",
+		keyStyle.Render("esc")+": "+descStyle.Render("close proxy terminal"),
 	)
 }
 
@@ -541,6 +611,41 @@ func (m model) registeringView() string {
 		))
 }
 
+func newTerminalState(it item) *terminalState {
+	in := textinput.New()
+	in.Placeholder = "Type command"
+	in.CharLimit = 500
+	in.Focus()
+
+	return &terminalState{
+		projectName: it.project.Name,
+		cwd:         it.project.Dir,
+		input:       in,
+	}
+}
+
+func (m model) updateTerminal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc:
+		projectName := m.terminal.projectName
+		m.terminal = nil
+		m.lastError = nil
+		m.status = fmt.Sprintf("Closed proxy terminal for %q.", projectName)
+		return m, nil
+	case tea.KeyEnter:
+		line := strings.TrimSpace(m.terminal.input.Value())
+		if line == "" {
+			return m, nil
+		}
+		m.terminal.input.SetValue("")
+		return m, proxyTerminalCmd(m.terminal.projectName, m.terminal.cwd, line)
+	}
+
+	var cmd tea.Cmd
+	m.terminal.input, cmd = m.terminal.input.Update(msg)
+	return m, cmd
+}
+
 func refreshCmd() tea.Cmd {
 	return func() tea.Msg {
 		projects, err := store.Load()
@@ -710,20 +815,91 @@ func rowsFor(items []item) []table.Row {
 	return rows
 }
 
-func openDirCmd(it item) tea.Cmd {
+func proxyTerminalCmd(projectName, cwd, line string) tea.Cmd {
 	return func() tea.Msg {
-		cmd := exec.Command("osascript", "-e", fmt.Sprintf(`
-        tell application "Terminal"
-            activate
-            do script "cd %s"
-        end tell
-        `, it.project.Dir))
+		display := fmt.Sprintf("%s $ %s", cwd, line)
+		parts := strings.Fields(line)
+		if len(parts) > 0 && parts[0] == "cd" {
+			target := ""
+			if len(parts) > 1 {
+				target = strings.TrimSpace(line[len("cd "):])
+			}
+			if target == "" || target == "~" {
+				home, err := os.UserHomeDir()
+				if err != nil {
+					return terminalCmdMsg{
+						status: fmt.Sprintf("Failed to resolve home directory for %q.", projectName),
+						output: display,
+						err:    err,
+					}
+				}
+				return terminalCmdMsg{
+					status: fmt.Sprintf("Changed directory for %q.", projectName),
+					output: display + "\n" + home,
+					cwd:    home,
+				}
+			}
 
-		if err := cmd.Start(); err != nil {
-			return actionMsg{err: err}
+			nextDir := target
+			if !filepath.IsAbs(nextDir) {
+				nextDir = filepath.Join(cwd, target)
+			}
+			nextDir = filepath.Clean(nextDir)
+			info, err := os.Stat(nextDir)
+			if err != nil {
+				return terminalCmdMsg{
+					status: fmt.Sprintf("cd failed for %q.", projectName),
+					output: display,
+					err:    err,
+				}
+			}
+			if !info.IsDir() {
+				return terminalCmdMsg{
+					status: fmt.Sprintf("cd failed for %q.", projectName),
+					output: display,
+					err:    fmt.Errorf("%s is not a directory", nextDir),
+				}
+			}
+			return terminalCmdMsg{
+				status: fmt.Sprintf("Changed directory for %q.", projectName),
+				output: display + "\n" + nextDir,
+				cwd:    nextDir,
+			}
 		}
-		return actionMsg{text: fmt.Sprintf("Opened %q in terminal.", it.project.Dir)}
+
+		cmd := exec.Command("sh", "-lc", line)
+		cmd.Dir = cwd
+		out, err := cmd.CombinedOutput()
+		body := strings.TrimRight(string(out), "\n")
+		if body == "" {
+			body = "(no output)"
+		}
+		chunk := display + "\n" + body
+		if err != nil {
+			return terminalCmdMsg{
+				status: fmt.Sprintf("Command failed for %q.", projectName),
+				output: chunk,
+				err:    err,
+			}
+		}
+		return terminalCmdMsg{
+			status: fmt.Sprintf("Command finished for %q.", projectName),
+			output: chunk,
+			cwd:    cwd,
+		}
 	}
+}
+
+func appendOutput(base, addition string) string {
+	base = strings.TrimSpace(base)
+	addition = strings.TrimSpace(addition)
+	if base == "" || base == "No command output yet." {
+		return addition
+	}
+	if addition == "" {
+		return base
+	}
+	return base + "\n" + addition
 }
 
 func lastNLines(s string, n int) string {

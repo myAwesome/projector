@@ -32,7 +32,7 @@ Running `project` starts the interactive terminal UI.
 - `e`: edit selected project (`name`, `dir`, `script`, `description`)
 - `x`: remove selected project (press twice to confirm)
 - `g`: run `git pull` in selected project directory
-- `o`: open project directory in terminal
+- `o`: open project directory in Output proxy terminal
 - `r`: refresh project status
 - `q`: quit
 
