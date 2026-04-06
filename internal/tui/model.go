@@ -52,25 +52,30 @@ type logsMsg struct {
 }
 
 type keyMap struct {
-	up       key.Binding
-	down     key.Binding
-	toggle   key.Binding
-	pull     key.Binding
-	edit     key.Binding
-	remove   key.Binding
-	register key.Binding
-	refresh  key.Binding
-	open     key.Binding
-	quit     key.Binding
+	up           key.Binding
+	down         key.Binding
+	outputUp     key.Binding
+	outputDn     key.Binding
+	outputTop    key.Binding
+	outputBottom key.Binding
+	toggle       key.Binding
+	pull         key.Binding
+	edit         key.Binding
+	remove       key.Binding
+	register     key.Binding
+	refresh      key.Binding
+	open         key.Binding
+	quit         key.Binding
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.toggle, k.register, k.pull, k.edit, k.remove, k.open, k.refresh, k.quit}
+	return []key.Binding{k.toggle, k.register, k.pull, k.edit, k.remove, k.open, k.outputUp, k.refresh, k.quit}
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.up, k.down, k.toggle, k.register, k.pull, k.edit, k.remove, k.open},
+		{k.outputUp, k.outputDn, k.outputTop, k.outputBottom},
 		{k.refresh, k.quit},
 	}
 }
@@ -99,6 +104,7 @@ type model struct {
 	items         []item
 	status        string
 	output        string
+	outputScroll  int
 	lastError     error
 	outputRows    int
 	viewWidth     int
@@ -137,16 +143,20 @@ func NewModel() model {
 		table: t,
 		help:  h,
 		keys: keyMap{
-			up:       key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("up/k", "up")),
-			down:     key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("down/j", "down")),
-			toggle:   key.NewBinding(key.WithKeys("enter", " "), key.WithHelp("enter/space", "run/stop")),
-			register: key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "register project")),
-			pull:     key.NewBinding(key.WithKeys("g"), key.WithHelp("g", "git pull")),
-			edit:     key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit project")),
-			remove:   key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "remove project")),
-			refresh:  key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
-			quit:     key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
-			open:     key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "open dir")),
+			up:           key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("up/k", "up")),
+			down:         key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("down/j", "down")),
+			outputUp:     key.NewBinding(key.WithKeys("pgup"), key.WithHelp("pgup", "output up")),
+			outputDn:     key.NewBinding(key.WithKeys("pgdown"), key.WithHelp("pgdn", "output down")),
+			outputTop:    key.NewBinding(key.WithKeys("home"), key.WithHelp("home", "output top")),
+			outputBottom: key.NewBinding(key.WithKeys("end"), key.WithHelp("end", "output bottom")),
+			toggle:       key.NewBinding(key.WithKeys("enter", " "), key.WithHelp("enter/space", "run/stop")),
+			register:     key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "register project")),
+			pull:         key.NewBinding(key.WithKeys("g"), key.WithHelp("g", "git pull")),
+			edit:         key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit project")),
+			remove:       key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "remove project")),
+			refresh:      key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
+			quit:         key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+			open:         key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "open dir")),
 		},
 		status:     "Loading projects...",
 		output:     "No command output yet.",
@@ -264,6 +274,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		switch {
+		case key.Matches(msg, m.keys.outputUp):
+			m.pendingDelete = ""
+			m.outputScroll += outputPageStep(m.outputRows)
+			return m, nil
+		case key.Matches(msg, m.keys.outputDn):
+			m.pendingDelete = ""
+			m.outputScroll -= outputPageStep(m.outputRows)
+			if m.outputScroll < 0 {
+				m.outputScroll = 0
+			}
+			return m, nil
+		case key.Matches(msg, m.keys.outputTop):
+			m.pendingDelete = ""
+			m.outputScroll = maxOutputScroll(m.output, outputBodyRows(m.outputRows, m.terminal != nil))
+			return m, nil
+		case key.Matches(msg, m.keys.outputBottom):
+			m.pendingDelete = ""
+			m.outputScroll = 0
+			return m, nil
 		case key.Matches(msg, m.keys.open):
 			m.pendingDelete = ""
 			it, ok := m.selected()
@@ -375,14 +404,15 @@ func (m model) View() string {
 	tablePanel := tablePanelStyle.Render(tableView)
 
 	outputTitle := lipgloss.NewStyle().Bold(true).Render("Output")
-	outputBodyRows := m.outputRows
-	if m.terminal != nil {
-		outputBodyRows = m.outputRows - 2
-		if outputBodyRows < 1 {
-			outputBodyRows = 1
-		}
+	bodyRows := outputBodyRows(m.outputRows, m.terminal != nil)
+	m.outputScroll = clampOutputScroll(m.outputScroll, m.output, bodyRows)
+	if m.outputScroll > 0 {
+		outputTitle = lipgloss.NewStyle().Bold(true).Render(fmt.Sprintf("Output (scrolled: -%d)", m.outputScroll))
 	}
-	outputBody := lastNLines(m.output, outputBodyRows)
+	if m.terminal != nil {
+		bodyRows = outputBodyRows(m.outputRows, true)
+	}
+	outputBody := outputWindow(m.output, bodyRows, m.outputScroll)
 	if m.terminal != nil {
 		prompt := lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(m.terminal.cwd + " $ ")
 		outputBody = lipgloss.JoinVertical(lipgloss.Left, outputBody, "", prompt+m.terminal.input.View())
@@ -651,6 +681,7 @@ func (m model) updateTerminal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		projectName := m.terminal.projectName
 		m.terminal = nil
 		m.output = "No command output yet."
+		m.outputScroll = 0
 		m.lastError = nil
 		m.status = fmt.Sprintf("Closed proxy terminal for %q.", projectName)
 		return m, nil
@@ -948,10 +979,64 @@ func appendOutput(base, addition string) string {
 	return base + "\n" + addition
 }
 
-func lastNLines(s string, n int) string {
+func outputWindow(s string, rows, scroll int) string {
 	lines := strings.Split(s, "\n")
-	if len(lines) <= n {
-		return strings.Join(lines, "\n")
+	if rows <= 0 {
+		return ""
 	}
-	return strings.Join(lines[len(lines)-n:], "\n")
+	scroll = clampOutputScroll(scroll, s, rows)
+	end := len(lines) - scroll
+	if end < 0 {
+		end = 0
+	}
+	start := end - rows
+	if start < 0 {
+		start = 0
+	}
+	return strings.Join(lines[start:end], "\n")
+}
+
+func clampOutputScroll(scroll int, output string, rows int) int {
+	if scroll < 0 {
+		return 0
+	}
+	max := maxOutputScroll(output, rows)
+	if scroll > max {
+		return max
+	}
+	return scroll
+}
+
+func maxOutputScroll(output string, rows int) int {
+	if rows < 1 {
+		rows = 1
+	}
+	lines := len(strings.Split(output, "\n"))
+	max := lines - rows
+	if max < 0 {
+		return 0
+	}
+	return max
+}
+
+func outputPageStep(rows int) int {
+	if rows < 2 {
+		return 1
+	}
+	step := rows - 1
+	if step < 1 {
+		return 1
+	}
+	return step
+}
+
+func outputBodyRows(totalRows int, terminalOpen bool) int {
+	rows := totalRows
+	if terminalOpen {
+		rows -= 2
+	}
+	if rows < 1 {
+		rows = 1
+	}
+	return rows
 }
