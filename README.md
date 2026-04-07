@@ -36,7 +36,7 @@ Running `project` starts the interactive terminal UI.
 - `r`: refresh project status
 - `q`: quit
 
-The Output panel automatically shows recent logs for the currently selected running project.
+The Output panel shows command and proxy-terminal output.
 
 For details, see [`docs/TUI.md`](docs/TUI.md).
 
