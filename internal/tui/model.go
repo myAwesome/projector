@@ -44,13 +44,6 @@ type terminalCmdMsg struct {
 	err    error
 }
 
-type logsTickMsg struct{}
-
-type logsMsg struct {
-	output string
-	err    error
-}
-
 type keyMap struct {
 	up           key.Binding
 	down         key.Binding
@@ -155,7 +148,7 @@ func NewModel() model {
 }
 
 func (m model) Init() tea.Cmd {
-	return tea.Batch(refreshCmd(), logsTickCmd())
+	return refreshCmd()
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -202,7 +195,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.status = fmt.Sprintf("%d project(s). Press enter to run/stop selected.", len(msg.items))
 		}
-		return m, selectedLogsCmd(m)
+		return m, nil
 	case actionMsg:
 		if msg.output != "" {
 			if msg.appendOutput {
@@ -222,7 +215,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.lastError = nil
 		m.status = msg.text
-		return m, tea.Batch(refreshCmd(), selectedLogsCmd(m))
+		return m, refreshCmd()
 	case terminalCmdMsg:
 		if msg.output != "" {
 			m.output = appendOutput(m.output, msg.output)
@@ -241,16 +234,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.lastError = nil
 		m.status = msg.status
-		return m, nil
-	case logsTickMsg:
-		return m, tea.Batch(logsTickCmd(), selectedLogsCmd(m))
-	case logsMsg:
-		if msg.err != nil {
-			return m, nil
-		}
-		if msg.output != "" && m.terminal == nil && m.editing == nil && m.registering == nil {
-			m.output = msg.output
-		}
 		return m, nil
 	case tea.KeyMsg:
 		if m.terminal != nil {
@@ -342,7 +325,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.table, cmd = m.table.Update(msg)
 	if m.table.Cursor() != prevCursor {
-		return m, tea.Batch(cmd, selectedLogsCmd(m))
+		return m, cmd
 	}
 	return m, cmd
 }
@@ -682,30 +665,6 @@ func refreshCmd() tea.Cmd {
 			})
 		}
 		return refreshMsg{items: items}
-	}
-}
-
-func logsTickCmd() tea.Cmd {
-	return tea.Tick(time.Second, func(time.Time) tea.Msg {
-		return logsTickMsg{}
-	})
-}
-
-func selectedLogsCmd(m model) tea.Cmd {
-	it, ok := m.selected()
-	if !ok || !it.running {
-		return nil
-	}
-	lines := m.outputRows
-	if lines < 10 {
-		lines = 10
-	}
-	return func() tea.Msg {
-		out, err := runner.TailLogs(it.project.Name, lines)
-		if err != nil {
-			return logsMsg{err: err}
-		}
-		return logsMsg{output: out}
 	}
 }
 
